@@ -6,7 +6,17 @@
 
 用于**本地部署的 Qwen 模型**(如 Qwen3.8-27B)的 DeepSeek Harness LLM 适配器插件,由 **vLLM** 以其 OpenAI 兼容的 `/v1/chat/completions` 端点提供服务。
 
-> **v0.4.1** · 精确兼容目标:DSH `0.1.2-rc.1` · MIT · 社区维护,非 DeepSeek 或 Qwen 官方产品。
+> **v0.5.0** · 精确兼容目标:DSH `0.2.0-rc.2` · MIT · 社区维护,非 DeepSeek 或 Qwen 官方产品。
+
+> **✨ v0.5.0 —— DSH 0.2.0 系列兼容**
+>
+> - **按 0.2.0 消息模型重构。** 工具结果成为一等 `role: 'tool'` 消息(以 `toolCallId` 为键),不再是内容块,因此工具结果 1:1 序列化到 wire 上(纯文本;多模态模型的结果中的图像拆到紧随其后的 `role: 'user'` 消息,与之前的拆分行为一致)。图像投影改用 0.2.0 的 per-image `ImageRequestTarget`(`width` / `height` / `maxBytes`),`offloaded` 图像块序列化为占位文本而非原始字节。
+> - **0.2.0 冷启动与实时设置修复。** 冻结 settings envelope 上六个路由级字段均标记 `volatile`,导出的 `Config` 暴露去引用后的 live-schema 节点视图(其 `toJSON()` 仍应答冻结 envelope),使 0.2.0 settings 服务的 `describe`/`write` 在桌面冷启动时正常工作,设置写入在无需重启的情况下到达下一次请求。(0.1.2 的 `settings.installSection` 接缝已被上游移除;插件现改为注入 `settings` 并关闭自动注册。)
+> - **兼容目标改为 DSH `0.2.0-rc.2`。** DSH `0.1.2-rc.1` 不再受支持:适配器契约、消息模型与 settings 接缝在 0.2.0 中均已变更。
+>
+> **升级:** 对 DSH 0.2.0 及以上的用户为直接替换 —— `dsh plugin --profile web add dsh-llm-qwen-local@0.5.0`(或固定快照 tag `#dsh-0.2.0-rc.2-plugin-0.5.0`)。无需任何配置变更;已有的 `settings.yaml` 原样可用。
+>
+> **仍在使用 DSH 0.1.2-rc.1?** 升级 `dsh` 之前请继续使用插件 `0.4.1`(npm 或面向该版本的 tag)。
 
 > **✨ v0.4.1 —— 设置页修复;移除 `maxRequestImageBytes` 路由上限**
 >
@@ -22,7 +32,7 @@
 >
 > **为什么:** 插件现在把用到的每一个 DSH 接缝(适配器契约、失败快照、brand 标识、API key / attribution / launch-env 助手、settings 命名空间的 `Config` 表面)都复刻为 `src/harness/` 下的小型本地模块,外加 `src/config.ts` 中冻结的、手工拥有的配置表面。插件无需导入定义这些接缝的包,即可对宿主上的活服务加载 —— 与参考实现 `dsh-llm-ollama` 相同的依赖姿态。
 >
-> **什么*不变*:** 对外插件行为完全一致 —— provider 路由 `qwen-local`、settings 命名空间 `llm-qwen-local`、设置页、模型发现、wire 方言均不变。DSH 兼容目标仍为 `0.1.2-rc.1`。`@deepseek-ai` 各包保留为**仅开发期**的类型固定(其 `import type` 引用在构建中被擦除),因此现有安装方式照旧可用。
+> **当时*不变*的:** 对外插件行为完全一致 —— provider 路由 `qwen-local`、settings 命名空间 `llm-qwen-local`、设置页、模型发现、wire 方言均不变。DSH 兼容目标当时仍为 `0.1.2-rc.1`(已由 v0.5.0 的 `0.2.0-rc.2` 取代)。`@deepseek-ai` 各包保留为**仅开发期**的类型固定(其 `import type` 引用在构建中被擦除),因此现有安装方式照旧可用。
 >
 > **升级:** 直接替换 —— `dsh plugin --profile web add dsh-llm-qwen-local@0.4.1`(或使用你的固定快照 tag)。无需任何配置变更。
 
@@ -63,7 +73,7 @@ dsh plugin --profile web add dsh-llm-qwen-local
 
 ## 环境要求
 
-- 已安装 `dsh`(CLI)**0.1.2-rc.1 或更新版本**,以及一个以 OpenAI 兼容 API 服务你的 Qwen 模型的 vLLM 实例。
+- 已安装 `dsh`(CLI)**0.2.0 或更新版本**,以及一个以 OpenAI 兼容 API 服务你的 Qwen 模型的 vLLM 实例。
 - 带全局 `fetch` 的 Node.js(18+)。
 - 组合中挂载了 `@deepseek-ai/dsh-attachment` 的 profile——标准的 `web` 与 `headless` profile 都经由 `dsh-base` 挂载了它。
 
@@ -71,19 +81,20 @@ dsh plugin --profile web add dsh-llm-qwen-local
 
 | DSH 版本 | 状态 |
 |---|---|
-| **0.1.2-rc.1** 及更新 | ✅ **支持**——本插件构建与测试所针对的版本。 |
+| **0.2.0** 及更新 | ✅ **支持**——本插件构建与测试所针对的版本(0.2.0-rc.2)。 |
+| **0.1.2-rc.1** | ⛔ **不支持**——适配器契约、消息模型与 settings 接缝在 0.2.0 中均已变更;该版本请使用插件 `0.4.1`。 |
 | **0.1.1-rc.2** 及更早 | ⛔ **不支持**——web 应用**启动失败**(见下)。 |
 
-本插件的设置页通过 DSH **0.1.2 的 "remote-namespace" 客户端模型**(`ctx.remote.settings` / `ctx.remote.credentials` / `ctx.remote.llm`)与宿主通信。这些 typed 命名空间是**宿主提供的服务,仅在 DSH 0.1.2 及以上存在**——更早的版本(如 `0.1.1-rc.2`)提供的是旧的共享 `api`/`connection` 客户端,设置页找不到这些服务。
+本插件的设置页通过 DSH 的 **"remote-namespace" 客户端模型**(`ctx.remote.settings` / `ctx.remote.credentials` / `ctx.remote.llm`)与宿主通信。这些 typed 命名空间是**宿主提供的服务,仅在 DSH 0.1.2 及以上存在**——更早的版本(如 `0.1.1-rc.2`)提供的是旧的共享 `api`/`connection` 客户端,设置页找不到这些服务。
 
-在不受支持的 DSH 上安装本插件时,web 应用会在启动时中止,报错如下:
+在 DSH `0.1.2-rc.1` 上,settings 接缝无法激活(0.1.2 的 settings 服务不理解 0.2.0 的 volatile/live-schema `Config` 表面),web 应用启动失败;在 DSH `0.1.1-rc.2` 及更早上,失败性质相同——页面注入的 typed `remote.*` 命名空间根本不存在——web 应用会在启动时中止:
 
 ```
 web boot: 1 entry did not activate
 dsh-llm-qwen-local: pending (waiting for services: remote.credentials, remote.llm, remote.settings)
 ```
 
-这是 DSH < 0.1.2 上的预期表现——本插件与该版本不兼容。**解决办法:** 把 `dsh` 升级到 `0.1.2-rc.1` 或更新版本;或在旧版本上移除本插件:
+这是 DSH < 0.2.0 上的预期表现——本插件与这些版本不兼容。**解决办法:** 把 `dsh` 升级到 `0.2.0` 或更新版本(兼容目标为 `0.2.0-rc.2`);或在旧版本上移除本插件:
 
 ```sh
 dsh plugin --profile web remove dsh-llm-qwen-local
@@ -104,7 +115,7 @@ dsh plugin --profile web add github:starefinger/dsh-llm-qwen-local
 dsh plugin --profile web add ./path/to/qwen3.8-LLM-plugin
 
 # 或从打包好的 tarball 安装(预构建,安装时无需构建):
-dsh plugin --profile web add ./dsh-llm-qwen-local-0.4.1.tgz
+dsh plugin --profile web add ./dsh-llm-qwen-local-0.5.0.tgz
 
 # 验证贡献的层,然后启动:
 dsh --profile web --dump-config
@@ -178,7 +189,7 @@ bundle 的 `cordis.patch.yml` 会插入一行基线 `llm-qwen-local`(模型 `qwe
 ## 主要限制
 
 - **模态声明不受校验**——纯文本端点上设 `multimodal: true` 会在图像消息持久化后于回合中途失败;视觉端点上设 `multimodal: false` 则是**静默**的(图像变为文本占位符)。
-- **工具结果内的图像搭乘后续用户消息**——vLLM wire 的 `role: 'tool'` 内容为纯文本,所以多模态模型的工具结果含图时,图像被拆分到紧随其后的 `role: 'user'` 多模态消息。
+- **工具结果内的图像搭乘后续用户消息**——自 DSH 0.2.0 起,工具结果是一等纯文本 `role: 'tool'` wire 消息(以 `toolCallId` 为键),所以多模态模型的工具结果含图时,图像被拆分到紧随其后的 `role: 'user'` 多模态消息。
 - **不支持视频输入,不支持 DashScope / 通义云**——harness 没有视频内容块,且适配器只面向本地 OpenAI 兼容服务。
 
 完整限制清单(思考回放形状、投影注意事项、推迟事项)与本插件不声称什么:[docs/design.zh.md](docs/design.zh.md) · [English](docs/design.md)。
@@ -200,7 +211,7 @@ pnpm test      # vitest: 序列化、翻译、对 mock vLLM 的 e2e
 
 `@deepseek-ai` 各包保留为**开发期**依赖:它们固定类型层面的契约(`import type` 导入在构建中被擦除),并让测试套件能启动真实的 `LlmRuntime`。若宿主改变了某个接缝的运行时形状,需同步更新对应的本地模块——`tests/boot.test.ts` 回归用真实的 Cordis 加载期校验器驱动冻结的 `Config`,以捕获在插件加载时被校验的那个接缝上的漂移。
 
-`Config` 形状变更后重新生成冻结的 settings envelope:`node scripts/extract-envelope.mjs --check`(将冻结常量与 `scripts/envelope-source.ts` 中的参考 schema 对比;在重构前的树上运行普通模式以重新捕获)。
+`Config` 形状变更后重新生成冻结的 settings envelope:用 `node scripts/dump-envelope.mjs` 转储当前 envelope,粘贴到 `src/config.ts` 的 `ENVELOPE` 常量中(两处保持同步),再用 `node scripts/extract-envelope.mjs --check` 校验(将冻结常量与 `scripts/envelope-source.ts` 中的参考 schema 对比)。
 
 ## 许可
 
