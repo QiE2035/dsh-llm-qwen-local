@@ -38,6 +38,7 @@
  * the page carries its own minimal rules.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Button, Checkbox, Input, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -122,43 +123,68 @@ interface PageState {
 
 type T = (key: LocaleKey, vars?: Record<string, string | number>) => string
 
+/**
+ * Layout-only styles. Every color, border, and radius comes from the host
+ * theme (`--dsw-alias-*` / `--dsw-radius-*` tokens), and every interactive
+ * control is a shared `@deepseek-ai/dsh-client-ui-primitives` component —
+ * so the page renders with the same inputs, buttons, checkboxes, and
+ * segmented controls the rest of the app uses. The vertical rhythm
+ * (12px field padding, hairline separators, 13px/500 primary labels, 16px
+ * footer) mirrors the host's own `SettingsForm` (fields.module.css), so the
+ * card reads as one more settings section instead of a foreign form.
+ */
 const css = {
   page: {
-    display: 'flex', flexDirection: 'column' as const, gap: 16,
-    maxWidth: 720, padding: '8px 0', fontFamily: 'inherit',
+    display: 'flex', flexDirection: 'column' as const,
+    maxWidth: 720, fontFamily: 'inherit',
   },
-  field: { display: 'flex', flexDirection: 'column' as const, gap: 4 },
-  label: { fontSize: 12, opacity: 0.8 },
-  input: {
-    boxSizing: 'border-box', width: '100%', padding: '6px 8px',
-    fontSize: 13, fontFamily: 'inherit',
-    background: 'rgba(127,127,127,0.08)', color: 'inherit',
-    border: '1px solid rgba(127,127,127,0.35)', borderRadius: 6,
+  /** Top-level form field, metric-matched to the host SettingsForm. */
+  field: {
+    display: 'flex', flexDirection: 'column' as const, gap: 6,
+    padding: '12px 0', flex: '0 1 auto',
+  },
+  hairline: { borderTop: '0.5px solid var(--dsw-alias-border-l2)' },
+  /** Compact label+control column used inside the model cards and effort rows. */
+  subField: { display: 'flex', flexDirection: 'column' as const, gap: 4, flex: '0 1 auto' },
+  label: {
+    fontSize: 13, fontWeight: 500, lineHeight: 1.5,
+    color: 'var(--dsw-alias-label-primary)',
   },
   row: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' },
   card: {
-    border: '1px solid rgba(127,127,127,0.35)', borderRadius: 8,
-    padding: 12, display: 'flex', flexDirection: 'column' as const, gap: 8,
+    border: '1px solid var(--dsw-alias-border-l1)',
+    borderRadius: 'var(--dsw-radius-md)',
+    background: 'var(--dsw-alias-bg-layer-1)',
+    padding: 12, display: 'flex', flexDirection: 'column' as const, gap: 12,
   },
   cardHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 13, fontWeight: 600, fontFamily: 'ui-monospace, Menlo, monospace' },
-  button: {
-    padding: '5px 10px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
-    background: 'rgba(127,127,127,0.12)', color: 'inherit',
-    border: '1px solid rgba(127,127,127,0.35)', borderRadius: 6,
+  cardTitle: {
+    fontSize: 13, fontWeight: 600,
+    fontFamily: 'ui-monospace, Menlo, monospace',
+    color: 'var(--dsw-alias-label-primary)',
   },
-  primary: {
-    padding: '6px 14px', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
-    background: 'rgba(90,140,255,0.22)', color: 'inherit',
-    border: '1px solid rgba(90,140,255,0.55)', borderRadius: 6,
+  /** Action row, metric-matched to the host SettingsForm footer. */
+  footer: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center', paddingTop: 16 },
+  /** Inline notes that sit inside a field (key status, "no reasoning" row). */
+  noteWarn: { margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-state-warn-primary)' },
+  noteMuted: { margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-label-secondary)' },
+  /** Standalone status paragraphs below the footer. */
+  msgError: { margin: '8px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-state-error-primary)' },
+  msgStatus: { margin: '8px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-label-secondary)' },
+  msgMuted: { margin: '8px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-label-secondary)' },
+  ok: { margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-state-success-primary)' },
+  banner: { margin: '0 0 12px', fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-state-warn-primary)' },
+  checks: { display: 'flex', gap: 16 },
+  /** Theme-tinted native select; the host primitives expose no Select yet. */
+  select: {
+    boxSizing: 'border-box', height: 32, padding: '0 8px',
+    fontSize: 14, fontFamily: 'inherit', lineHeight: '22px',
+    color: 'var(--dsw-alias-label-primary)',
+    background: 'var(--dsw-alias-bg-layer-1)',
+    border: '0.5px solid var(--dsw-alias-border-l4)',
+    borderRadius: 'var(--dsw-radius-md)',
   },
-  danger: { opacity: 0.75 },
-  status: { fontSize: 12 },
-  error: { fontSize: 12, color: '#f2a1a1' },
-  ok: { fontSize: 12, color: '#a1f2b1' },
-  warn: { fontSize: 12, color: '#f2d9a1' },
-  muted: { fontSize: 12, opacity: 0.6 },
-  checks: { display: 'flex', gap: 16, fontSize: 12 },
+  divider: { borderTop: '0.5px solid var(--dsw-alias-border-l2)', paddingTop: 8 },
 } as const
 
 /** Read one field of a raw JSON record, tolerating absence and wrong types. */
@@ -483,13 +509,13 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
   )
 
   if (snap.status === 'loading') {
-    return <p style={css.muted}>{t('loading')}</p>
+    return <p style={css.msgMuted}>{t('loading')}</p>
   }
   if (snap.status === 'unavailable') {
-    return <p style={css.error}>{t('unavailable')}</p>
+    return <p style={css.msgError}>{t('unavailable')}</p>
   }
   if (page === undefined) {
-    return <p style={css.muted}>{t('loading')}</p>
+    return <p style={css.msgMuted}>{t('loading')}</p>
   }
 
   const readOnly = !page.writable
@@ -500,13 +526,12 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
   return (
     <div style={css.page}>
       {readOnly
-        ? <p style={css.warn}>{t('readOnly')}</p>
+        ? <p style={css.banner}>{t('readOnly')}</p>
         : null}
 
       <div style={css.field}>
         <span style={css.label}>{t('endpoint')}</span>
-        <input
-          style={css.input}
+        <Input
           type="text"
           value={page.baseURL}
           placeholder={t('endpointPlaceholder')}
@@ -516,24 +541,22 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
         />
       </div>
 
-      <div style={css.field}>
+      <div style={{ ...css.field, ...css.hairline }}>
         <div style={css.row}>
           <span style={css.label}>{t('keyInput')}</span>
           {keyStored || page.apiKeyEnv.length > 0
             ? (
-              <button
-                style={{ ...css.button, ...css.danger }}
-                type="button"
+              <Button
+                size="sm"
                 disabled={readOnly}
                 onClick={() => { setKeyClear(true); setKeyDraft('') }}
               >
                 {t('keyClear')}
-              </button>
+              </Button>
             )
             : null}
         </div>
-        <input
-          style={css.input}
+        <Input
           type="password"
           autoComplete="off"
           value={keyClear ? '' : keyDraft}
@@ -547,21 +570,20 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
           onChange={event => { setKeyDraft(event.target.value); setKeyClear(false) }}
         />
         {keyClear
-          ? <span style={css.warn}>{t('keyClearNote')}</span>
+          ? <span style={css.noteWarn}>{t('keyClearNote')}</span>
           : unresolvedRef
-            ? <span style={css.warn}>{t('keyUnresolved', { value: effectiveRef })}</span>
-            : <span style={css.muted}>{t('keyStoredWhere', { value: effectiveRef })}</span>}
+            ? <span style={css.noteWarn}>{t('keyUnresolved', { value: effectiveRef })}</span>
+            : <span style={css.noteMuted}>{t('keyStoredWhere', { value: effectiveRef })}</span>}
       </div>
 
-      <div style={css.field}>
+      <div style={{ ...css.field, ...css.hairline }}>
         <span style={css.label}>{t('models')}</span>
         {page.draft.map((model, index) => (
           <div key={model.key} style={css.card}>
             <div style={css.cardHead}>
               <span style={css.cardTitle}>{model.id.length > 0 ? model.id : `#${index + 1}`}</span>
-              <button
-                style={{ ...css.button, ...css.danger }}
-                type="button"
+              <Button
+                size="sm"
                 disabled={readOnly}
                 onClick={() => {
                   setPage({ ...page, draft: page.draft.filter((_, i) => i !== index) })
@@ -569,13 +591,12 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                 }}
               >
                 {t('removeModel')}
-              </button>
+              </Button>
             </div>
             <div style={css.row}>
-              <div style={{ ...css.field, flex: 2, minWidth: 160 }}>
+              <div style={{ ...css.subField, flex: 2, minWidth: 160 }}>
                 <span style={css.label}>{t('modelId')}</span>
-                <input
-                  style={css.input}
+                <Input
                   type="text"
                   value={model.id}
                   placeholder={t('modelIdPlaceholder')}
@@ -584,10 +605,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { id: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.field, flex: 2, minWidth: 120 }}>
+              <div style={{ ...css.subField, flex: 2, minWidth: 120 }}>
                 <span style={css.label}>{t('modelName')}</span>
-                <input
-                  style={css.input}
+                <Input
                   type="text"
                   value={model.name}
                   placeholder={t('modelNamePlaceholder')}
@@ -596,10 +616,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { name: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.field, width: 120 }}>
+              <div style={{ ...css.subField, width: 120 }}>
                 <span style={css.label}>{t('contextWindow')}</span>
-                <input
-                  style={css.input}
+                <Input
                   type="number"
                   value={model.contextWindow}
                   aria-label={t('contextWindow')}
@@ -607,10 +626,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { contextWindow: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.field, width: 120 }}>
+              <div style={{ ...css.subField, width: 120 }}>
                 <span style={css.label}>{t('maxTokens')}</span>
-                <input
-                  style={css.input}
+                <Input
                   type="number"
                   value={model.maxTokens}
                   aria-label={t('maxTokens')}
@@ -618,10 +636,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { maxTokens: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.field, width: 120 }}>
+              <div style={{ ...css.subField, width: 120 }}>
                 <span style={css.label}>{t('imageMaxPixels')}</span>
-                <input
-                  style={css.input}
+                <Input
                   type="number"
                   value={model.imageMaxPixels}
                   aria-label={t('imageMaxPixels')}
@@ -629,10 +646,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { imageMaxPixels: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.field, width: 120 }}>
+              <div style={{ ...css.subField, width: 120 }}>
                 <span style={css.label}>{t('imageMaxBytes')}</span>
-                <input
-                  style={css.input}
+                <Input
                   type="number"
                   value={model.imageMaxBytes}
                   aria-label={t('imageMaxBytes')}
@@ -642,46 +658,38 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
               </div>
             </div>
             <div style={css.checks}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={model.multimodal}
-                  disabled={readOnly}
-                  onChange={event => setModel(index, { multimodal: event.target.checked })}
-                />{' '}
-                {t('multimodal')}
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={model.preserveThinking}
-                  disabled={readOnly}
-                  onChange={event => setModel(index, { preserveThinking: event.target.checked })}
-                />{' '}
-                {t('preserveThinking')}
-              </label>
+              <Checkbox
+                checked={model.multimodal}
+                disabled={readOnly}
+                label={t('multimodal')}
+                onChange={checked => setModel(index, { multimodal: checked })}
+              />
+              <Checkbox
+                checked={model.preserveThinking}
+                disabled={readOnly}
+                label={t('preserveThinking')}
+                onChange={checked => setModel(index, { preserveThinking: checked })}
+              />
             </div>
 
             {model.hasReasoning
               ? (
-                <div style={{ ...css.field, borderTop: '1px solid rgba(127,127,127,0.25)', paddingTop: 8 }}>
+                <div style={{ ...css.subField, ...css.divider }}>
                   <div style={css.row}>
                     <span style={{ ...css.label, fontWeight: 600 }}>{t('reasoning')}</span>
-                    <button
-                      style={{ ...css.button, ...css.danger }}
-                      type="button"
+                    <Button
+                      size="sm"
                       disabled={readOnly}
                       onClick={() => setModel(index, { hasReasoning: false })}
                     >
                       {t('removeReasoning')}
-                    </button>
+                    </Button>
                   </div>
                   {model.efforts.map((effort, effortIndex) => (
                     <div key={effort.key} style={{ ...css.row, marginTop: 6 }}>
-                      <div style={{ ...css.field, width: 120 }}>
+                      <div style={{ ...css.subField, width: 120 }}>
                         <span style={css.label}>{t('effortId')}</span>
-                        <input
-                          style={css.input}
+                        <Input
                           type="text"
                           value={effort.id}
                           aria-label={t('effortId')}
@@ -689,10 +697,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                           onChange={event => setEffort(index, effortIndex, { id: event.target.value })}
                         />
                       </div>
-                      <div style={{ ...css.field, flex: 1, minWidth: 100 }}>
+                      <div style={{ ...css.subField, flex: 1, minWidth: 100 }}>
                         <span style={css.label}>{t('effortName')}</span>
-                        <input
-                          style={css.input}
+                        <Input
                           type="text"
                           value={effort.name}
                           placeholder={t('effortNamePlaceholder')}
@@ -701,10 +708,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                           onChange={event => setEffort(index, effortIndex, { name: event.target.value })}
                         />
                       </div>
-                      <div style={{ ...css.field, flex: 1, minWidth: 120 }}>
+                      <div style={{ ...css.subField, flex: 1, minWidth: 120 }}>
                         <span style={css.label}>{t('effortWire')}</span>
-                        <input
-                          style={css.input}
+                        <Input
                           type="text"
                           value={effort.wire}
                           placeholder={t('effortWirePlaceholder')}
@@ -713,46 +719,45 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                           onChange={event => setEffort(index, effortIndex, { wire: event.target.value })}
                         />
                       </div>
-                      <button
-                        style={{ ...css.button, ...css.danger }}
-                        type="button"
+                      <Button
+                        size="sm"
                         disabled={readOnly}
                         onClick={() => setModel(index, { efforts: model.efforts.filter((_, i) => i !== effortIndex) })}
                       >
                         {t('removeEffort')}
-                      </button>
+                      </Button>
                     </div>
                   ))}
                   <div style={{ ...css.row, marginTop: 6 }}>
-                    <button
-                      style={css.button}
-                      type="button"
+                    <Button
+                      size="sm"
                       disabled={readOnly}
                       onClick={() => setModel(index, { efforts: [...model.efforts, { key: newKey(), id: '', name: '', wire: '' }] })}
                     >
                       {t('addEffort')}
-                    </button>
+                    </Button>
                   </div>
                   <div style={{ ...css.row, marginTop: 6 }}>
-                    <div style={{ ...css.field, width: 240 }}>
+                    <div style={{ ...css.subField, width: 240 }}>
                       <span style={css.label}>{t('offMode')}</span>
-                      <select
-                        style={css.input}
+                      <SegmentedControl
+                        id={`off-mode-${model.key}`}
                         value={model.offMode}
-                        aria-label={t('offMode')}
+                        label={t('offMode')}
                         disabled={readOnly}
-                        onChange={event => setModel(index, { offMode: event.target.value })}
-                      >
-                        <option value="chat-template-kwargs">{t('offModeKwargs')}</option>
-                        <option value="omit">{t('offModeOmit')}</option>
-                      </select>
+                        options={[
+                          { value: 'chat-template-kwargs', label: t('offModeKwargs') },
+                          { value: 'omit', label: t('offModeOmit') },
+                        ]}
+                        onChange={value => setModel(index, { offMode: value })}
+                      />
                     </div>
                   </div>
                   <div style={{ ...css.row, marginTop: 6 }}>
-                    <div style={{ ...css.field, width: 150 }}>
+                    <div style={{ ...css.subField, width: 150 }}>
                       <span style={css.label}>{t('defaultEffort')}</span>
                       <select
-                        style={css.input}
+                        style={css.select}
                         value={model.defaultEffort}
                         aria-label={t('defaultEffort')}
                         disabled={readOnly}
@@ -768,11 +773,10 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                 </div>
               )
               : (
-                <div style={{ ...css.row, borderTop: '1px solid rgba(127,127,127,0.25)', paddingTop: 8 }}>
-                  <span style={css.muted}>{t('noReasoning')}</span>
-                  <button
-                    style={css.button}
-                    type="button"
+                <div style={{ ...css.row, ...css.divider }}>
+                  <span style={css.noteMuted}>{t('noReasoning')}</span>
+                  <Button
+                    size="sm"
                     disabled={readOnly}
                     onClick={() => setModel(index, {
                       hasReasoning: true,
@@ -780,14 +784,12 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                     })}
                   >
                     {t('addReasoning')}
-                  </button>
+                  </Button>
                 </div>
               )}
           </div>
         ))}
-        <button
-          style={css.button}
-          type="button"
+        <Button
           disabled={readOnly}
           onClick={() => {
             setPage({
@@ -804,41 +806,38 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
           }}
         >
           {t('addModel')}
-        </button>
+        </Button>
       </div>
 
-      <div style={css.row}>
-        <button
-          style={css.button}
-          type="button"
+      <div style={{ ...css.footer, ...css.hairline }}>
+        <Button
           disabled={discovering || page.baseURL.length === 0 || readOnly}
           onClick={() => { void onDiscover() }}
         >
           {discovering ? t('discovering') : t('discover')}
-        </button>
-        <button
-          style={css.primary}
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
           disabled={saving || readOnly}
           onClick={() => { void onSave() }}
         >
           {saving ? t('saving') : t('save')}
-        </button>
+        </Button>
         {saved && saveError === undefined
           ? <span style={css.ok}>{t('saved')}</span>
           : null}
       </div>
       {saveError !== undefined
-        ? <p style={css.error}>{saveError}</p>
+        ? <p style={css.msgError}>{saveError}</p>
         : null}
       {discoverNote !== undefined
-        ? <p style={css.status}>{discoverNote}</p>
+        ? <p style={css.msgStatus}>{discoverNote}</p>
         : null}
       {discoverError !== undefined
-        ? <p style={css.error}>{discoverError}</p>
+        ? <p style={css.msgError}>{discoverError}</p>
         : null}
       {!hasAnyReasoning
-        ? <p style={css.muted}>{t('noReasoning')}</p>
+        ? <p style={css.msgMuted}>{t('noReasoning')}</p>
         : null}
     </div>
   )
