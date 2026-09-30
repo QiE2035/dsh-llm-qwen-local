@@ -151,12 +151,12 @@ const css = {
     color: 'var(--dsw-alias-label-primary)',
   },
   row: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' },
-  /** Effort-table columns. The header row and every data row use the same track
-   * sizes, so the columns stay aligned; rows carry controls only, so each row's
-   * remove button lines up with the inputs. */
-  effortColId: { display: 'flex', minWidth: 0, flex: '1 1 110px' },
-  effortColName: { display: 'flex', minWidth: 0, flex: '1.5 1 140px' },
-  effortColWire: { display: 'flex', minWidth: 0, flex: '1 1 110px' },
+  /** Effort-table columns. Header and data rows share the same tracks (and the
+   * same 68px trailing action slot), so the columns line up exactly; the column
+   * is a flex column, so the input stretches to fill it like the model fields. */
+  effortColId: { display: 'flex', flexDirection: 'column' as const, minWidth: 0, flex: '1 1 110px' },
+  effortColName: { display: 'flex', flexDirection: 'column' as const, minWidth: 0, flex: '1.5 1 140px' },
+  effortColWire: { display: 'flex', flexDirection: 'column' as const, minWidth: 0, flex: '1 1 110px' },
   /** Empty header slot, the width of a row remove button. */
   effortActionSlot: { flex: '0 0 68px' },
   card: {
@@ -734,13 +734,15 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                           onChange={event => setEffort(index, effortIndex, { wire: event.target.value })}
                         />
                       </div>
-                      <Button
-                        size="sm"
-                        disabled={readOnly}
-                        onClick={() => setModel(index, { efforts: model.efforts.filter((_, i) => i !== effortIndex) })}
-                      >
-                        {t('removeEffort')}
-                      </Button>
+                      <span style={css.effortActionSlot}>
+                        <Button
+                          size="sm"
+                          disabled={readOnly}
+                          onClick={() => setModel(index, { efforts: model.efforts.filter((_, i) => i !== effortIndex) })}
+                        >
+                          {t('removeEffort')}
+                        </Button>
+                      </span>
                     </div>
                   ))}
                   <div style={{ ...css.row, marginTop: 6 }}>
