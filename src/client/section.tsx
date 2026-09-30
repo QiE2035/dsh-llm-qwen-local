@@ -151,6 +151,9 @@ const css = {
     color: 'var(--dsw-alias-label-primary)',
   },
   row: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' },
+  /** Row whose controls sit on the baseline of the tallest field (used for effort
+   * rows, where a remove button must line up with the inputs, not the labels). */
+  rowEnd: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'flex-end' },
   card: {
     border: '1px solid var(--dsw-alias-border-l1)',
     borderRadius: 'var(--dsw-radius-md)',
@@ -594,7 +597,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
               </Button>
             </div>
             <div style={css.row}>
-              <div style={{ ...css.subField, flex: 2, minWidth: 160 }}>
+              <div style={{ ...css.subField, flex: 1.2, minWidth: 140, flexBasis: 140 }}>
                 <span style={css.label}>{t('modelId')}</span>
                 <Input
                   type="text"
@@ -605,7 +608,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { id: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.subField, flex: 2, minWidth: 120 }}>
+              <div style={{ ...css.subField, flex: 1.2, minWidth: 140, flexBasis: 140 }}>
                 <span style={css.label}>{t('modelName')}</span>
                 <Input
                   type="text"
@@ -616,7 +619,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { name: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.subField, width: 120 }}>
+              <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
                 <span style={css.label}>{t('contextWindow')}</span>
                 <Input
                   type="number"
@@ -626,7 +629,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { contextWindow: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.subField, width: 120 }}>
+            </div>
+            <div style={css.row}>
+              <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
                 <span style={css.label}>{t('maxTokens')}</span>
                 <Input
                   type="number"
@@ -636,7 +641,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { maxTokens: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.subField, width: 120 }}>
+              <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
                 <span style={css.label}>{t('imageMaxPixels')}</span>
                 <Input
                   type="number"
@@ -646,7 +651,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { imageMaxPixels: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.subField, width: 120 }}>
+              <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
                 <span style={css.label}>{t('imageMaxBytes')}</span>
                 <Input
                   type="number"
@@ -686,7 +691,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                     </Button>
                   </div>
                   {model.efforts.map((effort, effortIndex) => (
-                    <div key={effort.key} style={{ ...css.row, marginTop: 6 }}>
+                    <div key={effort.key} style={{ ...css.rowEnd, marginTop: 6 }}>
                       <div style={{ ...css.subField, width: 120 }}>
                         <span style={css.label}>{t('effortId')}</span>
                         <Input
@@ -738,7 +743,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                     </Button>
                   </div>
                   <div style={{ ...css.row, marginTop: 6 }}>
-                    <div style={{ ...css.subField, width: 240 }}>
+                    <div style={{ ...css.subField, width: 'fit-content' }}>
                       <span style={css.label}>{t('offMode')}</span>
                       <SegmentedControl
                         id={`off-mode-${model.key}`}
