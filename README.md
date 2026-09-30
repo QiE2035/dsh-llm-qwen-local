@@ -2,11 +2,18 @@
 
 English | [简体中文](README.zh.md)
 
-![Qwen 本地 (vLLM) settings page](docs/assets/setting.png)
+![Qwen 本地 (vLLM) configuration page](docs/assets/setting.png)
 
 DeepSeek Harness LLM adapter plugin for a **locally deployed Qwen model** (e.g. Qwen3.8-27B) served by **vLLM** behind its OpenAI-compatible `/v1/chat/completions` endpoint.
 
-> **v0.5.0** · exact compatibility target: DSH `0.2.0-rc.2` · MIT · community-maintained and not a DeepSeek or Qwen product.
+> **v0.6.0** · exact compatibility target: DSH `0.2.0-rc.2` · MIT · community-maintained and not a DeepSeek or Qwen product.
+
+> **✨ New in v0.6.0 — the configuration page moves to the Plugins page**
+>
+> - **The page is now rendered inline on the bundle's detail page in the Web sidebar's Plugins page** — the 0.2.0 plugin-configuration surface where each plugin is edited on its own page: open **Plugins → dsh-llm-qwen-local** and the form appears directly on the detail page (the same surface the official single-config bundles use; no extra navigation hop). The settings-window section (Settings → Qwen 本地 (vLLM)) is gone: 0.2.0 keeps plugin configuration on the Plugins page and leaves the settings window the read-only built-in inventory.
+> - **Same data, standard plumbing.** The page now rides the settings domain's shared `ConfigForm` scope — staged read, ordered revision-fenced writes, recovery reload — over the same `llm-qwen-local` namespace, so a save still persists through the profile's Cordis patch and reaches the next request live. The inline form follows the row's enablement (it disappears when the row is switched off).
+>
+> **Upgrading:** drop-in for users on DSH 0.2.0 and newer — `dsh plugin --profile web add dsh-llm-qwen-local@0.6.0` (or the pinned snapshot tag `#dsh-0.2.0-rc.2-plugin-0.6.0`). No configuration changes required.
 
 > **✨ New in v0.5.0 — DSH 0.2.0-line compatibility**
 >
@@ -85,13 +92,13 @@ Two deployment-specific knobs are first-class:
 | **0.1.2-rc.1** | ⛔ **Not supported** — the adapter contract, message model, and settings seam all changed in 0.2.0; use plugin `0.4.1` on this line. |
 | **0.1.1-rc.2** and older | ⛔ **Not supported** — the web app **fails to boot** (see below). |
 
-The plugin's settings page talks to the host through DSH's **"remote-namespace" client model** (`ctx.remote.settings` / `ctx.remote.credentials` / `ctx.remote.llm`). Those typed namespaces are host-provided services that **only exist on DSH 0.1.2 and newer** — earlier releases (e.g. `0.1.1-rc.2`) expose the older shared `api`/`connection` client instead, so the page cannot find them.
+The plugin's configuration page talks to the host through DSH's **"remote-namespace" client model**: the settings domain's shared `configForms` scope (the staged `llm-qwen-local` section read and its ordered writes) plus `ctx.remote.credentials` / `ctx.remote.llm`. Those services are host-provided and **only exist on DSH 0.2.0 and newer** — earlier releases (e.g. `0.1.1-rc.2`) expose the older shared `api`/`connection` client instead, so the page cannot find them.
 
 On DSH `0.1.2-rc.1` the settings seam cannot activate (0.1.2's settings service does not understand the 0.2.0 volatile/live-schema `Config` surface), so the web app fails to boot. On DSH `0.1.1-rc.2` and older the failure is the same in kind — the typed `remote.*` namespaces the page injects do not exist at all — with the web app aborting at startup:
 
 ```
 web boot: 1 entry did not activate
-dsh-llm-qwen-local: pending (waiting for services: remote.credentials, remote.llm, remote.settings)
+dsh-llm-qwen-local: pending (waiting for services: remote.credentials, remote.llm, configForms)
 ```
 
 This is expected on DSH < 0.2.0 — the plugin is not compatible with those versions. **Fix:** upgrade `dsh` to `0.2.0` or newer (the compatibility target is `0.2.0-rc.2`), or remove the plugin on the older build:
@@ -115,7 +122,7 @@ dsh plugin --profile web add github:starefinger/dsh-llm-qwen-local
 dsh plugin --profile web add ./path/to/qwen3.8-LLM-plugin
 
 # or from a packed tarball (prebuilt — no build step on install):
-dsh plugin --profile web add ./dsh-llm-qwen-local-0.5.0.tgz
+dsh plugin --profile web add ./dsh-llm-qwen-local-0.6.0.tgz
 
 # verify the contributed layer, then start:
 dsh --profile web --dump-config
@@ -127,8 +134,8 @@ dsh --profile web
 Each compatibility snapshot is tagged with the dsh version it targets. Snapshots published since 0.3.1 use `dsh-<dsh-version>-plugin-<plugin-version>` (dsh version first, plugin version as suffix); earlier snapshots use the bare `dsh-<dsh-version>` form. **For a given dsh version, several tags may exist — use the one with the newest plugin-version suffix: it is the latest snapshot that supports your dsh.** To install a specific snapshot, append `#<tag>` to the git URL — pnpm resolves the tag to the exact commit, so the install is reproducible and independent of `main`'s current state:
 
 ```sh
-# install the latest snapshot for dsh 0.2.0-rc.2 (plugin 0.5.0):
-dsh plugin --profile web add "git+https://github.com/starefinger/dsh-llm-qwen-local.git#dsh-0.2.0-rc.2-plugin-0.5.0"
+# install the latest snapshot for dsh 0.2.0-rc.2 (plugin 0.6.0):
+dsh plugin --profile web add "git+https://github.com/starefinger/dsh-llm-qwen-local.git#dsh-0.2.0-rc.2-plugin-0.6.0"
 ```
 
 Pick the tag matching your dsh version (`dsh --version`) — when several tags share the same dsh version, take the newest plugin-version suffix. After upgrading dsh, remove and re-add with the tag for the new version:
@@ -144,13 +151,13 @@ Git and local-path installs run the package's `prepare` script (→ `pnpm build`
 
 ## Quick start
 
-### 1. Configure on the settings page
+### 1. Configure on the Plugins page
 
-The bundle's `cordis.patch.yml` inserts a baseline `llm-qwen-local` line (model `qwen3.8`, `multimodal: true`, `off/low/medium/xhigh` efforts, default `xhigh`). Open **Settings → Qwen 本地 (vLLM)** to edit it: endpoint, optional API key (stored in the host credentials service, never in `settings.yaml`), and one card per model — id, display name, context window, output cap, image budgets, the multimodal switch, thinking preservation, and the reasoning-effort table:
+The bundle's `cordis.patch.yml` inserts a baseline `llm-qwen-local` line (model `qwen3.8`, `multimodal: true`, `off/low/medium/xhigh` efforts, default `xhigh`). Open **Plugins → dsh-llm-qwen-local** in the Web sidebar: the configuration form is rendered inline on the bundle's detail page (the same surface the official single-config bundles use) — no extra navigation hop. It edits the endpoint, an optional API key (stored in the host credentials service, never in `settings.yaml`), and one card per model — id, display name, context window, output cap, image budgets, the multimodal switch, thinking preservation, and the reasoning-effort table:
 
-![Settings page: endpoint, image budget, API key, and the model card](docs/assets/setting.png)
+![Configuration page: endpoint, image budget, API key, and the model card](docs/assets/setting.png)
 
-![Settings page: reasoning-effort table, default level, and the discover/save actions](docs/assets/setting2.png)
+![Configuration page: reasoning-effort table, default level, and the discover/save actions](docs/assets/setting2.png)
 
 - **Discover models** probes `{baseURL}/models` and merges the ids it finds.
 - **Save** applies **live** — the adapter re-resolves per request, so a saved change reaches the next model call without a restart.

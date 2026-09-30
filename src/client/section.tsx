@@ -1,20 +1,32 @@
 /**
- * The Qwen (local, vLLM) settings page: one form over the plugin's
- * `llm-qwen-local` settings section. The host owns the section through the
- * settings seam; this surface reads the resolved value, edits a local draft,
- * and saves it back with `settings.replace` (the seam validates against the
- * schema and answers a redacted view). The API key follows the core Models
- * page convention: the value never enters the settings section — it is
- * written to the durable credentials service under the provider's derived
- * ref (`QWEN_LOCAL_API_KEY`), and the section's `apiKeyEnv` field records
- * that ref name for the adapter's resolver. Model discovery probes the
- * draft's endpoint through `llm.discoverModels` and merges the ids into the
- * draft. The form also edits the request-image budgets introduced by the
- * 0.1.1-rc.2 harness upgrade: the per-model pixel/byte projection budgets.
- * There is no route-level total image cap in this plugin — every image is
- * inlined once it fits its per-image budget, and a request too large for the
- * endpoint is the endpoint's to refuse (the backend LLM service's own input
- * limits apply).
+ * The Qwen (local, vLLM) configuration page: one form over the plugin's
+ * `llm-qwen-local` settings namespace. On DSH 0.2.0 the settings service
+ * projects the plugin's volatile `Config` into that namespace and commits
+ * writes through the profile's Cordis patch, so this page — mounted on the
+ * Web sidebar's **Plugins** page through the `plugins.bundle.config` slot
+ * (keyed by the bundle's package name, `dsh-llm-qwen-local`) and rendered
+ * inline on the bundle's detail page — edits the same document the host
+ * resolves per request. The shared
+ * `ConfigForm` scope (from the settings domain's `configForms` service) owns
+ * the staged read (schema-resolved value + revision fence), the ordered write
+ * queue, and the recovery reload after a refused write; the page renders the
+ * snapshot, edits a local draft, and commits it as one atomic section-root
+ * `set` operation.
+ *
+ * The page renders only the form body — the bundle detail page's built-in
+ * chrome (the bundle's `locale/*.json` metadata, falling back to the
+ * manifest) owns the title and description, so there is no second header (the
+ * official companions follow the same pattern). The API key follows the core
+ * Models page convention: the value never enters the settings section — it is
+ * written to the durable credentials service under the provider's derived ref
+ * (`QWEN_LOCAL_API_KEY`), and the section's `apiKeyEnv` field records that ref
+ * name for the adapter's resolver. Model discovery probes the draft's endpoint
+ * through `llm.discoverModels` and merges the ids into the draft. The form
+ * also edits the request-image budgets introduced by the 0.1.1-rc.2 harness
+ * upgrade: the per-model pixel/byte projection budgets. There is no route-level
+ * total image cap in this plugin — every image is inlined once it fits its
+ * per-image budget, and a request too large for the endpoint is the endpoint's
+ * to refuse (the backend LLM service's own input limits apply).
  *
  * Row identity: model and effort rows carry a stable `key` assigned when the
  * row is created or discovered, so the React row — and its inputs — keep
@@ -27,11 +39,21 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { QwenLocalOperations } from './operations.ts'
 import type { LocaleKey } from './locales.ts'
 
 /** The settings namespace this page edits (mirrors the node-side NS). */
 export const SECTION_NS = 'llm-qwen-local'
+
+/**
+ * The `plugins.bundle.config` key: the bundle's package name. The
+ * plugin-manager page renders the keyed face inline on the bundle's detail
+ * page (the same surface the official single-config bundles use), so the key
+ * is the package name — not a per-row id.
+ */
+export const BUNDLE_CONFIG_KEY = 'dsh-llm-qwen-local'
 
 /** The provider route this section configures (for discovery). */
 export const PROVIDER_ROUTE = 'qwen-local'
@@ -86,7 +108,10 @@ interface ModelDraft {
 }
 
 interface PageState {
-  revision: number
+  /** Revision the draft was read at; fences the next write. */
+  revision: number | undefined
+  /** Whether the Host document accepts writes (memory mode never does). */
+  writable: boolean
   draft: ModelDraft[]
   baseURL: string
   /** The loaded section's `apiKeyEnv` value (a ref or env-var name). */
@@ -102,8 +127,6 @@ const css = {
     display: 'flex', flexDirection: 'column' as const, gap: 16,
     maxWidth: 720, padding: '8px 0', fontFamily: 'inherit',
   },
-  h1: { margin: 0, fontSize: 16, fontWeight: 600 },
-  sub: { margin: 0, fontSize: 12, opacity: 0.7 },
   field: { display: 'flex', flexDirection: 'column' as const, gap: 4 },
   label: { fontSize: 12, opacity: 0.8 },
   input: {
@@ -187,12 +210,13 @@ function toModels(raw: unknown): ModelDraft[] {
   })
 }
 
-/** Parse the resolved section value into page state, segregating passthrough. */
-function parsePage(value: unknown, revision: number): PageState {
+/** Parse the scope's schema-resolved section into page state, segregating passthrough. */
+function parsePage(value: unknown, revision: number | undefined, writable: boolean): PageState {
   const record = field(value)
   const { baseURL: _baseURL, apiKeyEnv: _apiKeyEnv, models: _models, ...rest } = record
   return {
     revision,
+    writable,
     baseURL: stringField(record.baseURL),
     apiKeyEnv: stringField(record.apiKeyEnv),
     draft: toModels(record.models),
@@ -237,9 +261,9 @@ function wireModel(model: ModelDraft): Record<string, unknown> {
 type KeyMode = 'new' | 'clear' | 'keep'
 
 /**
- * Serialize the draft into the section value for `settings.replace`. The
- * `apiKeyEnv` the section carries: the managed ref after a key store, absent
- * after a clear, the loaded value untouched otherwise.
+ * Serialize the draft into the section value for the section-root `set` op.
+ * The `apiKeyEnv` the section carries: the managed ref after a key store,
+ * absent after a clear, the loaded value untouched otherwise.
  */
 function wireSection(state: PageState, keyMode: KeyMode): Record<string, unknown> {
   const section: Record<string, unknown> = { ...state.passthrough }
@@ -252,29 +276,37 @@ function wireSection(state: PageState, keyMode: KeyMode): Record<string, unknown
   return section
 }
 
-export interface QwenLocalSectionProps {
-  /** Close the settings panel (the shell owns the open state). */
-  close: () => void
-  /** The bound Host operations (settings/credentials/llm remote namespaces). */
-  operations: QwenLocalOperations
-  /** The settings namespace this page edits. */
-  sectionNs: string
-  /** The pushed-invalidation channel (settings/credentials document commits). */
-  remote: RemoteEvents
-  /** Registrant-localized translate. */
-  t: T
-}
-
 /** The pushed-invalidation channel the page listens on (structural subset). */
 export interface RemoteEvents {
   $on(event: string, handler: (...args: unknown[]) => void): () => void
 }
 
-/** The Qwen (local) settings page body. */
-export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocalSectionProps): JSX.Element {
+export interface QwenLocalConfigPageProps {
+  /** The view the Plugins page renders (the detail page renders `page`). */
+  view: string
+  /** The shared settings scope for the `llm-qwen-local` namespace. */
+  scope: ConfigForm<unknown>
+  /** The bound Host operations (credentials + llm discovery remotes). */
+  operations: QwenLocalOperations
+  /** The pushed-invalidation channel (credentials document commits). */
+  remote: RemoteEvents
+  /** Registrant-localized translate. */
+  t: T
+}
+
+/**
+ * The Qwen (local) configuration page. The Plugins page renders it inline on
+ * the bundle's detail page (`plugins.bundle.config`, `view: "page"`), so the
+ * page is the full form — the detail page's built-in chrome owns the header.
+ */
+export function QwenLocalConfigPage(page: QwenLocalConfigPageProps): JSX.Element {
+  return <QwenLocalPageBody scope={page.scope} operations={page.operations} remote={page.remote} t={page.t} />
+}
+
+/** The full configuration form, staged over the shared settings scope. */
+function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfigPageProps, 'view'>): JSX.Element {
+  const [snap, setSnap] = useState(() => scope.getSnapshot())
   const [page, setPage] = useState<PageState | undefined>()
-  const [loadError, setLoadError] = useState<string | undefined>()
-  const [missing, setMissing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>()
@@ -282,53 +314,31 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
   const [discoverNote, setDiscoverNote] = useState<string | undefined>()
   const [discoverError, setDiscoverError] = useState<string | undefined>()
   // API key: the value only crosses the wire in one direction (set/unset);
-  // the page never reads it back — only whether one is stored under KEY_REF.
+  // the page never reads it back — only whether one is stored under the ref.
   const [keyDraft, setKeyDraft] = useState('')
   const [keyStored, setKeyStored] = useState(false)
   const [keyClear, setKeyClear] = useState(false)
 
-  const load = useCallback(async () => {
-    setLoadError(undefined)
-    setMissing(false)
-    try {
-      const described = await operations.describeSection(sectionNs)
-      if (described.kind === 'refused') {
-        setLoadError(described.message)
-        setPage(undefined)
-        return
-      }
-      if (described.kind === 'missing') {
-        setMissing(true)
-        setPage(undefined)
-        return
-      }
-      const view = described.view
-      const parsed = parsePage(view.value, view.revision)
-      setPage(parsed)
-      const ref = refFor(parsed.apiKeyEnv)
-      const info = await operations.describeCredential(ref)
-      setKeyStored(info !== undefined && info.configured)
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error))
+  // Pushed invalidation through the shared mirror: any committed settings
+  // change replaces the snapshot, so two open surfaces converge without
+  // polling.
+  useEffect(() => scope.subscribe(() => setSnap(scope.getSnapshot())), [scope])
+
+  // Derive the draft from the ready snapshot (and re-read the credential
+  // state for the ref the section names).
+  useEffect(() => {
+    if (snap.status !== 'ready') {
       setPage(undefined)
+      return
     }
-  }, [operations, sectionNs])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  // Pushed invalidation: any committed settings change refetches the section
-  // so two open surfaces converge without polling.
-  useEffect(() => {
-    const disposers = [
-      remote.$on('settings/document-updated', () => { void load() }),
-      remote.$on('credentials/reference-updated', () => { void load() }),
-    ]
-    return () => {
-      for (const dispose of disposers) dispose()
-    }
-  }, [remote, load])
+    const parsed = parsePage(snap.value, snap.revision, snap.writable)
+    setPage(parsed)
+    let stale = false
+    void operations.describeCredential(refFor(parsed.apiKeyEnv))
+      .then(info => { if (!stale) setKeyStored(info?.configured ?? false) })
+      .catch(() => { /* the describe is best-effort; the form renders either way */ })
+    return () => { stale = true }
+  }, [snap, operations])
 
   const setModel = useCallback((index: number, patch: Partial<ModelDraft>) => {
     setPage(current => {
@@ -373,7 +383,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
       // so a key just typed into the form reaches the /models probe without a
       // save. The clear flag means "no auth on the next probe".
       if (keyClear === false && keyDraft.length > 0) request.apiKey = keyDraft
-      const result = await operations.discoverModels(sectionNs, request)
+      const result = await operations.discoverModels(SECTION_NS, request)
       if (result.kind === 'refused') {
         setDiscoverError(t('discoverError', { detail: result.message }))
         return
@@ -417,7 +427,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
     } finally {
       setDiscovering(false)
     }
-  }, [operations, sectionNs, page, t, keyDraft, keyClear])
+  }, [operations, page, t, keyDraft, keyClear])
 
   const keyMode: KeyMode = keyClear ? 'clear' : keyDraft.length > 0 ? 'new' : 'keep'
 
@@ -427,10 +437,9 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
     setSaveError(undefined)
     setSaved(false)
     try {
-      // The effective ref is the section's named one (or the derived default);
-      // the credential write goes first: if it succeeds and the settings
-      // replace then conflicts, the section still points at the old ref —
-      // never the reverse (a section pointing at a missing credential).
+      // The credential write goes first: if it succeeds and the section write
+      // then conflicts, the section still points at the old ref — never the
+      // reverse (a section pointing at a missing credential).
       const ref = refFor(page.apiKeyEnv)
       if (keyClear) {
         const removed = await operations.removeCredential(ref)
@@ -441,13 +450,17 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
         if (stored.kind === 'refused') throw new Error(stored.message)
         setKeyStored(true)
       }
-      const written = await operations.replaceSection(sectionNs, wireSection(page, keyMode), page.revision)
-      if (written.kind === 'conflict') {
-        setSaveError(t('saveError', { detail: written.message }))
+      // One atomic section-root `set`, fenced at the revision the draft was
+      // read at. The scope queues the write, folds the accepted answer into
+      // the shared mirror (the subscription effect re-parses it), and reloads
+      // the latest Host state after a refused write — so a stale fence shows
+      // the fresh values instead of a dead draft.
+      const section = wireSection(page, keyMode) as Record<string, JsonValue>
+      const ok = await scope.mutate([{ op: 'set', path: [], value: section }], page.revision)
+      if (!ok) {
+        setSaveError(t('saveRefused'))
         return
       }
-      if (written.kind === 'refused') throw new Error(written.message)
-      setPage(parsePage(written.view.value, written.view.revision))
       setKeyDraft('')
       setKeyClear(false)
       setSaved(true)
@@ -456,39 +469,39 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
     } finally {
       setSaving(false)
     }
-  }, [operations, sectionNs, page, t, keyDraft, keyMode])
+  }, [scope, operations, page, t, keyDraft, keyMode])
 
-  // The ref the key operations target: the section's named one, else the
-  // derived default (the core `refFor` convention).
-  const effectiveRef = page?.apiKeyEnv !== undefined && page.apiKeyEnv.length > 0
-    ? page.apiKeyEnv
-    : KEY_REF
   // A named ref with no stored credential resolves only through a
   // launch-environment variable of the same name — say so instead of letting
   // the endpoint answer 401 without explanation.
-  const unresolvedRef = keyMode === 'keep' && !keyStored && keyDraft.length === 0
+  const unresolvedRef = page !== undefined && keyMode === 'keep' && !keyStored && keyDraft.length === 0
+  const effectiveRef = page !== undefined && page.apiKeyEnv.length > 0 ? page.apiKeyEnv : KEY_REF
 
   const hasAnyReasoning = useMemo(
     () => page?.draft.some(model => model.hasReasoning) ?? false,
     [page],
   )
 
-  if (loadError !== undefined) {
-    return <p style={css.error}>{t('loadError', { detail: loadError })}</p>
+  if (snap.status === 'loading') {
+    return <p style={css.muted}>{t('loading')}</p>
   }
-  if (missing) {
-    return <p style={css.error}>{t('notMounted')}</p>
+  if (snap.status === 'unavailable') {
+    return <p style={css.error}>{t('unavailable')}</p>
   }
   if (page === undefined) {
     return <p style={css.muted}>{t('loading')}</p>
   }
 
+  const readOnly = !page.writable
+
+  // The Plugins page's built-in row chrome (RowDetail) already renders this
+  // row's title, ids, and description above the form — so the page starts
+  // straight with the body (the official companions render the form only).
   return (
     <div style={css.page}>
-      <div>
-        <h1 style={css.h1}>{t('title')}</h1>
-        <p style={css.sub}>{t('subtitle')}</p>
-      </div>
+      {readOnly
+        ? <p style={css.warn}>{t('readOnly')}</p>
+        : null}
 
       <div style={css.field}>
         <span style={css.label}>{t('endpoint')}</span>
@@ -498,6 +511,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
           value={page.baseURL}
           placeholder={t('endpointPlaceholder')}
           aria-label={t('endpoint')}
+          disabled={readOnly}
           onChange={event => { setPage({ ...page, baseURL: event.target.value }); setSaved(false) }}
         />
       </div>
@@ -510,6 +524,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
               <button
                 style={{ ...css.button, ...css.danger }}
                 type="button"
+                disabled={readOnly}
                 onClick={() => { setKeyClear(true); setKeyDraft('') }}
               >
                 {t('keyClear')}
@@ -528,7 +543,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
               ? t('keyStoredPlaceholder')
               : t('keyNonePlaceholder')}
           aria-label={t('keyInput')}
-          disabled={keyClear}
+          disabled={keyClear || readOnly}
           onChange={event => { setKeyDraft(event.target.value); setKeyClear(false) }}
         />
         {keyClear
@@ -547,6 +562,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
               <button
                 style={{ ...css.button, ...css.danger }}
                 type="button"
+                disabled={readOnly}
                 onClick={() => {
                   setPage({ ...page, draft: page.draft.filter((_, i) => i !== index) })
                   setSaved(false)
@@ -564,6 +580,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   value={model.id}
                   placeholder={t('modelIdPlaceholder')}
                   aria-label={t('modelId')}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { id: event.target.value })}
                 />
               </div>
@@ -575,6 +592,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   value={model.name}
                   placeholder={t('modelNamePlaceholder')}
                   aria-label={t('modelName')}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { name: event.target.value })}
                 />
               </div>
@@ -585,6 +603,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   type="number"
                   value={model.contextWindow}
                   aria-label={t('contextWindow')}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { contextWindow: event.target.value })}
                 />
               </div>
@@ -595,6 +614,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   type="number"
                   value={model.maxTokens}
                   aria-label={t('maxTokens')}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { maxTokens: event.target.value })}
                 />
               </div>
@@ -605,6 +625,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   type="number"
                   value={model.imageMaxPixels}
                   aria-label={t('imageMaxPixels')}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { imageMaxPixels: event.target.value })}
                 />
               </div>
@@ -615,6 +636,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   type="number"
                   value={model.imageMaxBytes}
                   aria-label={t('imageMaxBytes')}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { imageMaxBytes: event.target.value })}
                 />
               </div>
@@ -624,6 +646,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                 <input
                   type="checkbox"
                   checked={model.multimodal}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { multimodal: event.target.checked })}
                 />{' '}
                 {t('multimodal')}
@@ -632,6 +655,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                 <input
                   type="checkbox"
                   checked={model.preserveThinking}
+                  disabled={readOnly}
                   onChange={event => setModel(index, { preserveThinking: event.target.checked })}
                 />{' '}
                 {t('preserveThinking')}
@@ -646,6 +670,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                     <button
                       style={{ ...css.button, ...css.danger }}
                       type="button"
+                      disabled={readOnly}
                       onClick={() => setModel(index, { hasReasoning: false })}
                     >
                       {t('removeReasoning')}
@@ -660,6 +685,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                           type="text"
                           value={effort.id}
                           aria-label={t('effortId')}
+                          disabled={readOnly}
                           onChange={event => setEffort(index, effortIndex, { id: event.target.value })}
                         />
                       </div>
@@ -671,6 +697,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                           value={effort.name}
                           placeholder={t('effortNamePlaceholder')}
                           aria-label={t('effortName')}
+                          disabled={readOnly}
                           onChange={event => setEffort(index, effortIndex, { name: event.target.value })}
                         />
                       </div>
@@ -682,12 +709,14 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                           value={effort.wire}
                           placeholder={t('effortWirePlaceholder')}
                           aria-label={t('effortWire')}
+                          disabled={readOnly}
                           onChange={event => setEffort(index, effortIndex, { wire: event.target.value })}
                         />
                       </div>
                       <button
                         style={{ ...css.button, ...css.danger }}
                         type="button"
+                        disabled={readOnly}
                         onClick={() => setModel(index, { efforts: model.efforts.filter((_, i) => i !== effortIndex) })}
                       >
                         {t('removeEffort')}
@@ -698,6 +727,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                     <button
                       style={css.button}
                       type="button"
+                      disabled={readOnly}
                       onClick={() => setModel(index, { efforts: [...model.efforts, { key: newKey(), id: '', name: '', wire: '' }] })}
                     >
                       {t('addEffort')}
@@ -710,6 +740,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                         style={css.input}
                         value={model.offMode}
                         aria-label={t('offMode')}
+                        disabled={readOnly}
                         onChange={event => setModel(index, { offMode: event.target.value })}
                       >
                         <option value="chat-template-kwargs">{t('offModeKwargs')}</option>
@@ -724,6 +755,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                         style={css.input}
                         value={model.defaultEffort}
                         aria-label={t('defaultEffort')}
+                        disabled={readOnly}
                         onChange={event => setModel(index, { defaultEffort: event.target.value })}
                       >
                         <option value="">{t('defaultEffortUnset')}</option>
@@ -741,6 +773,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
                   <button
                     style={css.button}
                     type="button"
+                    disabled={readOnly}
                     onClick={() => setModel(index, {
                       hasReasoning: true,
                       efforts: [{ key: newKey(), id: 'off', name: '', wire: 'none' }],
@@ -755,6 +788,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
         <button
           style={css.button}
           type="button"
+          disabled={readOnly}
           onClick={() => {
             setPage({
               ...page,
@@ -777,7 +811,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
         <button
           style={css.button}
           type="button"
-          disabled={discovering || page.baseURL.length === 0}
+          disabled={discovering || page.baseURL.length === 0 || readOnly}
           onClick={() => { void onDiscover() }}
         >
           {discovering ? t('discovering') : t('discover')}
@@ -785,7 +819,7 @@ export function QwenLocalSection({ operations, sectionNs, remote, t }: QwenLocal
         <button
           style={css.primary}
           type="button"
-          disabled={saving}
+          disabled={saving || readOnly}
           onClick={() => { void onSave() }}
         >
           {saving ? t('saving') : t('save')}

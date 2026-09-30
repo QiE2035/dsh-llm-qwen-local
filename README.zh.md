@@ -2,11 +2,18 @@
 
 [English](README.md) | 简体中文
 
-![Qwen 本地 (vLLM) 设置页](docs/assets/setting.png)
+![Qwen 本地 (vLLM) 配置页](docs/assets/setting.png)
 
 用于**本地部署的 Qwen 模型**(如 Qwen3.8-27B)的 DeepSeek Harness LLM 适配器插件,由 **vLLM** 以其 OpenAI 兼容的 `/v1/chat/completions` 端点提供服务。
 
-> **v0.5.0** · 精确兼容目标:DSH `0.2.0-rc.2` · MIT · 社区维护,非 DeepSeek 或 Qwen 官方产品。
+> **v0.6.0** · 精确兼容目标:DSH `0.2.0-rc.2` · MIT · 社区维护,非 DeepSeek 或 Qwen 官方产品。
+
+> **✨ v0.6.0 —— 配置页迁至 Plugins 页**
+>
+> - **页面现内联渲染于 Web 侧边栏 Plugins 页的 bundle 详情页**——0.2.0 的插件配置入口,每个插件在自己的页面上编辑:打开 **Plugins → dsh-llm-qwen-local**,表单直接显示在详情页(与官方单配置 bundle 使用同一表面,无需多一次导航)。设置窗口里的 section(设置 → Qwen 本地 (vLLM))已移除:0.2.0 把插件配置放在 Plugins 页,设置窗口只保留只读的内建插件清单。
+> - **同一份数据,标准管道。** 页面改走 settings 域的共享 `ConfigForm` scope——暂存读取、有序的版本围栏写入、拒写后恢复重读——仍编辑同一个 `llm-qwen-local` 命名空间,因此保存依旧经 profile 的 Cordis patch 持久化并在下一次请求即时生效。内联表单跟随行的启用状态(行关闭时消失)。
+>
+> **升级:** 对 DSH 0.2.0 及以上的用户为直接替换 —— `dsh plugin --profile web add dsh-llm-qwen-local@0.6.0`(或固定快照 tag `#dsh-0.2.0-rc.2-plugin-0.6.0`)。无需任何配置变更。
 
 > **✨ v0.5.0 —— DSH 0.2.0 系列兼容**
 >
@@ -85,13 +92,13 @@ dsh plugin --profile web add dsh-llm-qwen-local
 | **0.1.2-rc.1** | ⛔ **不支持**——适配器契约、消息模型与 settings 接缝在 0.2.0 中均已变更;该版本请使用插件 `0.4.1`。 |
 | **0.1.1-rc.2** 及更早 | ⛔ **不支持**——web 应用**启动失败**(见下)。 |
 
-本插件的设置页通过 DSH 的 **"remote-namespace" 客户端模型**(`ctx.remote.settings` / `ctx.remote.credentials` / `ctx.remote.llm`)与宿主通信。这些 typed 命名空间是**宿主提供的服务,仅在 DSH 0.1.2 及以上存在**——更早的版本(如 `0.1.1-rc.2`)提供的是旧的共享 `api`/`connection` 客户端,设置页找不到这些服务。
+本插件的配置页通过 DSH 的 **"remote-namespace" 客户端模型**与宿主通信:settings 域的共享 `configForms` scope(`llm-qwen-local` 节的暂存读取与有序写入),外加 `ctx.remote.credentials` / `ctx.remote.llm`。这些服务**由宿主提供,仅存在于 DSH 0.2.0 及以上**——更早的版本(如 `0.1.1-rc.2`)提供的是旧的共享 `api`/`connection` 客户端,配置页找不到这些服务。
 
 在 DSH `0.1.2-rc.1` 上,settings 接缝无法激活(0.1.2 的 settings 服务不理解 0.2.0 的 volatile/live-schema `Config` 表面),web 应用启动失败;在 DSH `0.1.1-rc.2` 及更早上,失败性质相同——页面注入的 typed `remote.*` 命名空间根本不存在——web 应用会在启动时中止:
 
 ```
 web boot: 1 entry did not activate
-dsh-llm-qwen-local: pending (waiting for services: remote.credentials, remote.llm, remote.settings)
+dsh-llm-qwen-local: pending (waiting for services: remote.credentials, remote.llm, configForms)
 ```
 
 这是 DSH < 0.2.0 上的预期表现——本插件与这些版本不兼容。**解决办法:** 把 `dsh` 升级到 `0.2.0` 或更新版本(兼容目标为 `0.2.0-rc.2`);或在旧版本上移除本插件:
@@ -115,7 +122,7 @@ dsh plugin --profile web add github:starefinger/dsh-llm-qwen-local
 dsh plugin --profile web add ./path/to/qwen3.8-LLM-plugin
 
 # 或从打包好的 tarball 安装(预构建,安装时无需构建):
-dsh plugin --profile web add ./dsh-llm-qwen-local-0.5.0.tgz
+dsh plugin --profile web add ./dsh-llm-qwen-local-0.6.0.tgz
 
 # 验证贡献的层,然后启动:
 dsh --profile web --dump-config
@@ -127,8 +134,8 @@ dsh --profile web
 每个兼容性快照都会以它对应的 dsh 版本号打 tag。0.3.1 及之后的快照使用 `dsh-<dsh版本号>-plugin-<插件版本号>` 格式(dsh 版本在前,插件版本作后缀);更早的快照使用不带后缀的 `dsh-<dsh版本号>` 格式。**同一个 dsh 版本可能存在多个 tag——请使用插件版本号后缀最大的那个:它是支持你的 dsh 的最新快照。** 要安装某个特定快照,在 git URL 后追加 `#<tag>`——pnpm 会把 tag 解析到精确的 commit,安装结果可复现,且与 `main` 分支当前的状态无关:
 
 ```sh
-# 安装 dsh 0.1.2-rc.1 的最新快照(插件 0.4.0):
-dsh plugin --profile web add "git+https://github.com/starefinger/dsh-llm-qwen-local.git#dsh-0.1.2-rc.1-plugin-0.4.0"
+# 安装 dsh 0.2.0-rc.2 的最新快照(插件 0.6.0):
+dsh plugin --profile web add "git+https://github.com/starefinger/dsh-llm-qwen-local.git#dsh-0.2.0-rc.2-plugin-0.6.0"
 ```
 
 选择与你 dsh 版本匹配的 tag(`dsh --version` 查看)——同一个 dsh 版本有多个 tag 时,取插件版本号后缀最大的。升级 dsh 后,先移除再用新版本的 tag 重新安装:
@@ -144,13 +151,13 @@ git 与本地路径安装会在安装时运行包的 `prepare` 脚本(→ `pnpm 
 
 ## 快速上手
 
-### 1. 在设置页配置
+### 1. 在 Plugins 页配置
 
-bundle 的 `cordis.patch.yml` 会插入一行基线 `llm-qwen-local`(模型 `qwen3.8`,多模态 `true`,`off/low/medium/xhigh` 档位,默认 `xhigh`)。打开 **设置 → Qwen 本地 (vLLM)** 页面编辑:端点、可选 API Key(存入宿主凭据服务,绝不写入 `settings.yaml`)、以及每个模型一张卡片——id、显示名、上下文窗口、输出上限、图像预算、多模态开关、历史思考保留、推理档位表:
+bundle 的 `cordis.patch.yml` 会插入一行基线 `llm-qwen-local`(模型 `qwen3.8`,多模态 `true`,`off/low/medium/xhigh` 档位,默认 `xhigh`)。在 Web 侧边栏打开 **Plugins → dsh-llm-qwen-local**:配置表单内联渲染于 bundle 详情页(与官方单配置 bundle 使用同一表面,无需多一次导航)。它可编辑端点、可选 API Key(存入宿主凭据服务,绝不写入 `settings.yaml`)、以及每个模型一张卡片——id、显示名、上下文窗口、输出上限、图像预算、多模态开关、历史思考保留、推理档位表:
 
-![设置页:端点、图像预算、API Key 与模型卡片](docs/assets/setting.png)
+![配置页:端点、图像预算、API Key 与模型卡片](docs/assets/setting.png)
 
-![设置页:推理档位表、默认档位与发现/保存操作](docs/assets/setting2.png)
+![配置页:推理档位表、默认档位与发现/保存操作](docs/assets/setting2.png)
 
 - **从端点发现模型**会探测 `{baseURL}/models` 并合并发现的 id。
 - **保存**后**即时生效**——适配器按请求重新解析,保存的变更在下次模型调用时即到达,无需重启。

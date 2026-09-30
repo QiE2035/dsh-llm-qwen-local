@@ -10,17 +10,21 @@
  * Frontend configuration: on DSH >= 0.2.0 the settings service projects the
  * plugin's `Config` schema into the `llm-qwen-local` user-settings section on
  * its own (the volatile fields of the frozen envelope carry the marks that
- * make them editable), so the web settings surface renders an editable form
- * and committed writes flow through the normal loader path; the volatile
- * fields arrive in `apply()` as live references the runtime updates in place
- * when a settings write commits, and the plugin re-reads them through
- * {@link liveValue} per request. (DSH 0.1.2 built this section through the
- * removed `settings.installSection` seam and switched the configuration
- * source explicitly.) The provider is registered in the
- * configurable-provider directory (the web Models page offers it as a row,
+ * make them editable), and committed writes persist through the profile's
+ * Cordis patch and the normal loader path; the volatile fields arrive in
+ * `apply()` as live references the runtime updates in place when a settings
+ * write commits, and the plugin re-reads them through {@link liveValue} per
+ * request. (DSH 0.1.2 built this section through the removed
+ * `settings.installSection` seam and switched the configuration source
+ * explicitly.) The plugin's client bundle renders the editable form inline on
+ * the bundle's detail page on the Web sidebar's Plugins page
+ * (`plugins.bundle.config`, keyed by the package name), not in the settings
+ * window — 0.2.0 places plugin configuration there and keeps the settings
+ * window on the read-only built-in inventory. The provider is registered in
+ * the configurable-provider directory (the web Models page offers it as a row,
  * live or dormant) and a model-discovery hook interrogates a draft's
- * `GET /models` endpoint so the Models page can prefill the catalog from a
- * live deployment.
+ * `GET /models` endpoint so the page can prefill the catalog from a live
+ * deployment.
  *
  * ```yaml
  * - id: llm-qwen-local
@@ -186,10 +190,12 @@ export function apply(ctx: Context, config: Config): void {
   // frozen envelope) and commits writes through the config editor's normal
   // loader path, so no section registration is needed — the live source
   // arrives through the volatile references `current()` re-reads. `configure`
-  // only records this instance's page policy (auto-generated pages stay
-  // closed; the section page itself is contributed by the client bundle over
-  // the `settings.section` slot). The settings service is optional, so the
-  // wiring attaches only while one is mounted.
+  // only records this instance's page policy (auto-generated settings pages
+  // stay closed; the editable form is the client bundle's configuration page
+  // rendered inline on the bundle's detail page over the `plugins.bundle.config`
+  // slot). The
+  // settings service is optional, so the wiring attaches only while one is
+  // mounted.
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
   })
