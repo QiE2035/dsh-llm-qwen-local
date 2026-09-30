@@ -151,9 +151,14 @@ const css = {
     color: 'var(--dsw-alias-label-primary)',
   },
   row: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' },
-  /** Row whose controls sit on the baseline of the tallest field (used for effort
-   * rows, where a remove button must line up with the inputs, not the labels). */
-  rowEnd: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'flex-end' },
+  /** Effort-table columns. The header row and every data row use the same track
+   * sizes, so the columns stay aligned; rows carry controls only, so each row's
+   * remove button lines up with the inputs. */
+  effortColId: { display: 'flex', minWidth: 0, flex: '1 1 110px' },
+  effortColName: { display: 'flex', minWidth: 0, flex: '1.5 1 140px' },
+  effortColWire: { display: 'flex', minWidth: 0, flex: '1 1 110px' },
+  /** Empty header slot, the width of a row remove button. */
+  effortActionSlot: { flex: '0 0 68px' },
   card: {
     border: '1px solid var(--dsw-alias-border-l1)',
     borderRadius: 'var(--dsw-radius-md)',
@@ -619,7 +624,9 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { name: event.target.value })}
                 />
               </div>
-              <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
+            </div>
+            <div style={css.row}>
+              <div style={{ ...css.subField, flex: 1, minWidth: 110, flexBasis: 110 }}>
                 <span style={css.label}>{t('contextWindow')}</span>
                 <Input
                   type="number"
@@ -629,9 +636,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { contextWindow: event.target.value })}
                 />
               </div>
-            </div>
-            <div style={css.row}>
-              <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
+              <div style={{ ...css.subField, flex: 1, minWidth: 110, flexBasis: 110 }}>
                 <span style={css.label}>{t('maxTokens')}</span>
                 <Input
                   type="number"
@@ -641,6 +646,8 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                   onChange={event => setModel(index, { maxTokens: event.target.value })}
                 />
               </div>
+            </div>
+            <div style={css.row}>
               <div style={{ ...css.subField, flex: 1, minWidth: 96, flexBasis: 96 }}>
                 <span style={css.label}>{t('imageMaxPixels')}</span>
                 <Input
@@ -690,10 +697,15 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                       {t('removeReasoning')}
                     </Button>
                   </div>
+                  <div style={{ ...css.row, marginTop: 6 }}>
+                    <span style={{ ...css.label, ...css.effortColId }}>{t('effortId')}</span>
+                    <span style={{ ...css.label, ...css.effortColName }}>{t('effortName')}</span>
+                    <span style={{ ...css.label, ...css.effortColWire }}>{t('effortWire')}</span>
+                    <span style={css.effortActionSlot} />
+                  </div>
                   {model.efforts.map((effort, effortIndex) => (
-                    <div key={effort.key} style={{ ...css.rowEnd, marginTop: 6 }}>
-                      <div style={{ ...css.subField, width: 120 }}>
-                        <span style={css.label}>{t('effortId')}</span>
+                    <div key={effort.key} style={{ ...css.row, marginTop: 6 }}>
+                      <div style={css.effortColId}>
                         <Input
                           type="text"
                           value={effort.id}
@@ -702,8 +714,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                           onChange={event => setEffort(index, effortIndex, { id: event.target.value })}
                         />
                       </div>
-                      <div style={{ ...css.subField, flex: 1, minWidth: 100 }}>
-                        <span style={css.label}>{t('effortName')}</span>
+                      <div style={css.effortColName}>
                         <Input
                           type="text"
                           value={effort.name}
@@ -713,8 +724,7 @@ function QwenLocalPageBody({ scope, operations, remote, t }: Omit<QwenLocalConfi
                           onChange={event => setEffort(index, effortIndex, { name: event.target.value })}
                         />
                       </div>
-                      <div style={{ ...css.subField, flex: 1, minWidth: 120 }}>
-                        <span style={css.label}>{t('effortWire')}</span>
+                      <div style={css.effortColWire}>
                         <Input
                           type="text"
                           value={effort.wire}
